@@ -74,5 +74,8 @@ Live Ubuntu AIDE at `b67fdc68a` passed its own provider's low/high requests
 and a structured read-tool/result replay. `/api/health` reports this model,
 600,000 context tokens and no provider diagnostics. The 26 provider tests
 and backend TypeScript pass. PR #49 is not merged: the live checkout includes
-the reviewed-by-tests candidate, so startup's master auto-sync warns/skips
+the tested candidate, so startup's master auto-sync warns/skips
 until the PR is integrated. Do not force-reset that deployed adapter away.
+
+Hardware wear/stability baseline and passive follow-up procedure:
+[HARDWARE-OBSERVATION.md](HARDWARE-OBSERVATION.md).
