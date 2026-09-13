@@ -49,6 +49,24 @@ def main():
         good = fn['name'] == 'read_file' and json.loads(fn['arguments']).get('path') == 'src/main.py'
     emit('tool_call', good, calls=calls, seconds=seconds)
 
+    messages = [
+        {'role': 'user', 'content': 'Read src/main.py using the read_file tool.'},
+        {'role': 'assistant', 'content': None, 'tool_calls': calls},
+        {'role': 'tool', 'tool_call_id': calls[0]['id'],
+         'content': 'The file contains exactly: DEPLOY_MARKER=V41_READY'},
+        {'role': 'user', 'content': 'Reply with the value of DEPLOY_MARKER only.'},
+    ]
+    body, seconds = probe.chat(
+        args.base, args.model, messages, 1800, tools=probe.TOOLS,
+        chat_template_kwargs={'enable_thinking': False}, max_tokens=128)
+    content = (body['choices'][0]['message'].get('content') or '').strip()
+    emit('tool_result_roundtrip', content == 'V41_READY', content=content, seconds=seconds)
+
+    body, seconds = request('Copy this Korean text exactly, without explanation: 안녕하세요 세계',
+                            max_tokens=64)
+    content = (body['choices'][0]['message'].get('content') or '').strip()
+    emit('korean_copy', content == '안녕하세요 세계', content=content, seconds=seconds)
+
     if args.context:
         hay, counted, target = probe.fit_haystack_to_window(
             args.base, args.model, args.context, 'QX-4417-ZD', 1800)
