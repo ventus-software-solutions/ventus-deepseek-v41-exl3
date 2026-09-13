@@ -3,6 +3,7 @@ import argparse
 import json
 import math
 import sys
+import time
 import urllib.request
 
 
@@ -12,6 +13,7 @@ def main():
     parser.add_argument('--base', default='http://127.0.0.1:8000')
     parser.add_argument('--model', default='DeepSeek-v4.1-Flash-EXL3')
     parser.add_argument('--context', type=int)
+    parser.add_argument('--benchmark', action='store_true')
     args = parser.parse_args()
     sys.path.insert(0, args.fleet_scripts)
     import brain_probe as probe
@@ -81,13 +83,16 @@ def main():
              requested_window=args.context, prompt_tokens=actual,
              content=text, seconds=seconds, degenerate=reason)
 
-    payload = {'model': args.model, 'messages': [{'role': 'user',
-               'content': 'Reply with exactly the word ready.'}],
-               'temperature': 0, 'max_tokens': 32, 'stream': True,
+    prompt = ('Explain how an LRU cache works, with a Python implementation and a worked example.'
+              if args.benchmark else 'Reply with exactly the word ready.')
+    payload = {'model': args.model, 'messages': [{'role': 'user', 'content': prompt}],
+               'temperature': 0, 'max_tokens': 1024 if args.benchmark else 32, 'stream': True,
+               'stream_options': {'include_usage': True},
                'chat_template_kwargs': {'enable_thinking': False}}
     req = urllib.request.Request(args.base + '/v1/chat/completions',
           data=json.dumps(payload).encode(), headers={'Content-Type': 'application/json'})
     fragments, done = [], False
+    started, first_content, usage = time.perf_counter(), None, None
     with urllib.request.urlopen(req, timeout=120) as response:
         for line in response:
             if not line.startswith(b'data: '):
@@ -97,10 +102,27 @@ def main():
                 done = True
                 break
             event = json.loads(raw)
+            usage = event.get('usage') or usage
             for choice in event.get('choices', []):
-                fragments.append(choice.get('delta', {}).get('content') or '')
+                fragment = choice.get('delta', {}).get('content') or ''
+                if fragment and first_content is None:
+                    first_content = time.perf_counter()
+                fragments.append(fragment)
+    ended = time.perf_counter()
     text = ''.join(fragments).strip()
-    emit('post_request_streaming', done and text.lower().rstrip('.') == 'ready', content=text)
+    if args.benchmark:
+        tokens = (usage or {}).get('completion_tokens', 0)
+        dead, reason = probe.looks_degenerate(text)
+        # Streaming chunks can contain several accepted speculative tokens;
+        # this rate is approximate, not a per-token server timing trace.
+        rate = ((tokens - 1) / (ended - first_content)
+                if first_content is not None and ended > first_content else None)
+        emit('streaming_benchmark', done and tokens >= 128 and not dead,
+             usage=usage, seconds=ended-started,
+             ttft_seconds=first_content-started if first_content else None,
+             approximate_decode_tokens_s=rate, degenerate=reason, content=text)
+    else:
+        emit('post_request_streaming', done and text.lower().rstrip('.') == 'ready', content=text)
 
 
 if __name__ == '__main__':
