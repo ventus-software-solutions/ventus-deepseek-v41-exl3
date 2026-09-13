@@ -69,3 +69,10 @@ Requires AIDE's opt-in `deepseek-v41-chat-template` dialect (PR #49): the older
 adapter sends `reasoning_effort=off`, which this server rejects with HTTP 400.
 The new mapping uses `enable_thinking=false` for low/minimal and valid effort
 values for all levels. Older model and cloud adapters are unchanged.
+
+Live Ubuntu AIDE at `b67fdc68a` passed its own provider's low/high requests
+and a structured read-tool/result replay. `/api/health` reports this model,
+600,000 context tokens and no provider diagnostics. The 26 provider tests
+and backend TypeScript pass. PR #49 is not merged: the live checkout includes
+the reviewed-by-tests candidate, so startup's master auto-sync warns/skips
+until the PR is integrated. Do not force-reset that deployed adapter away.
