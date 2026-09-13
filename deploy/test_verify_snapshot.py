@@ -15,7 +15,7 @@ class VerificationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'hash mismatch'):
                 verify(root, entry)
             (root / 'weight').write_bytes(b'yes')
-            verify(root, entry)
+            self.assertTrue(verify(root, entry)['verified'])
 
     def test_git_blob_verified_with_header(self):
         with tempfile.TemporaryDirectory() as folder:

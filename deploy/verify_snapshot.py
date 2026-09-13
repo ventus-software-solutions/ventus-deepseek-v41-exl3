@@ -1,5 +1,6 @@
 """Verify local Hub files against an immutable revision without loading weights."""
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 from pathlib import Path
@@ -22,8 +23,8 @@ def verify(root, entry):
     expected = lfs['sha256'] if lfs else entry['blobId']
     if digest.hexdigest() != expected:
         raise ValueError(f'hash mismatch: {path}')
-    print(json.dumps({'file': entry['rfilename'], 'bytes': entry['size'],
-                      'digest': digest.hexdigest(), 'verified': True}), flush=True)
+    return {'file': entry['rfilename'], 'bytes': entry['size'],
+            'digest': digest.hexdigest(), 'verified': True}
 
 
 def main():
@@ -32,17 +33,22 @@ def main():
     parser.add_argument('repo')
     parser.add_argument('revision')
     parser.add_argument('--files', nargs='+')
+    parser.add_argument('--workers', type=int, default=4)
     args = parser.parse_args()
     if len(args.revision) != 40 or any(c not in '0123456789abcdef' for c in args.revision):
         parser.error('revision must be an immutable commit')
+    if not 1 <= args.workers <= 16:
+        parser.error('workers must be between 1 and 16')
     url = f'https://huggingface.co/api/models/{args.repo}/revision/{args.revision}?blobs=true'
     with urllib.request.urlopen(url, timeout=60) as response:
         manifest = json.load(response)
     if manifest['sha'] != args.revision:
         raise ValueError('Hub returned a different revision')
     entries = {e['rfilename']: e for e in manifest['siblings']}
-    for name in args.files or entries:
-        verify(args.root, entries[name])
+    selected = [entries[name] for name in args.files or entries]
+    with ThreadPoolExecutor(max_workers=args.workers) as pool:
+        for result in pool.map(lambda entry: verify(args.root, entry), selected):
+            print(json.dumps(result), flush=True)
     print(json.dumps({'revision': args.revision, 'complete': True}), flush=True)
 
 
