@@ -404,6 +404,14 @@ count_model_shards() {
     find "$1" -maxdepth 1 -name 'model-*.safetensors' 2>/dev/null | wc -l | tr -d '[:space:]' || true
 }
 
+rsync_required_bytes() {
+    local stats bytes
+    stats=$(LC_ALL=C rsync -an --stats "$1/" "${WORKER_SSH}:$2/") || return 1
+    bytes=$(awk '/^Total transferred file size:/{gsub(/,/,"",$5); print $5}' <<<"$stats")
+    [[ "$bytes" =~ ^[0-9]+$ ]] || return 1
+    printf '%s\n' "$bytes"
+}
+
 # ---------------------------- weight fetch ---------------------------------
 # hf (huggingface_hub >= 0.34) or the older huggingface-cli. Resumable: both
 # skip files already complete, so a killed download is restarted by re-running.
@@ -572,11 +580,17 @@ preflight() {
             if ! worker_ssh "mkdir -p '$WORKER_MODEL_DIR' '$WORKER_ENGRAM_DIR' && test -w '$WORKER_MODEL_DIR' && test -w '$WORKER_ENGRAM_DIR'"; then
                 die "worker cannot write $WORKER_MODEL_DIR / $WORKER_ENGRAM_DIR — fix ownership"
             fi
-            local need_b avail_b
-            need_b=$(( $(du -sb "$MODEL_HOST" | awk '{print $1}') + $(zfs_bytes_for_engram) ))
+            local need_b avail_b model_b engram_b
+            model_b=$(rsync_required_bytes "$MODEL_HOST" "$WORKER_MODEL_DIR") \
+                || die "cannot estimate pending worker EXL3 transfer"
+            engram_b=$(rsync_required_bytes "$ENGRAM_DIR" "$WORKER_ENGRAM_DIR") \
+                || die "cannot estimate pending worker Engram transfer"
+            # rsync replaces changed files through temporary copies. Reserve their
+            # full sizes plus 1 GiB for metadata; completed replicas need no duplicate.
+            need_b=$(( model_b + engram_b + 1024*1024*1024 ))
             avail_b="$(worker_ssh "df -PB1 '$WORKER_HOME' | awk 'NR==2{print \$4}'" || true)"
             if [ -n "${avail_b:-}" ] && [ "$avail_b" -lt "$need_b" ]; then
-                die "worker has $((avail_b/1024/1024/1024)) GiB free under $WORKER_HOME, need ~$((need_b/1024/1024/1024)) GiB for a local EXL3+Engram copy. Use WEIGHT_SYNC=nfs (default; no local copy) instead of rsync."
+                die "worker has $((avail_b/1024/1024/1024)) GiB free under $WORKER_HOME, need ~$((need_b/1024/1024/1024)) GiB for pending EXL3+Engram transfers. Use WEIGHT_SYNC=nfs (default; no local copy) instead of rsync."
             fi
             ;;
     esac

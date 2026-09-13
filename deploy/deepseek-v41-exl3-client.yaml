@@ -1,0 +1,10 @@
+# Experiment client metadata only: not a fleet boot/promotion entry.
+model_path: /home/hibbault/models/DeepSeek-V4.1-Flash-EXL3-2.9bpw
+served_model_name: DeepSeek-v4.1-Flash-EXL3
+aide_endpoint: http://192.168.0.101:8000
+context_tokens: 600000
+temperature: 0.6
+max_duration_seconds: 900
+# Measured 599,004-token prefill+needle response: 775 seconds.
+stall_timeout_seconds: 900
+reasoning_dialect: deepseek-v41-chat-template
